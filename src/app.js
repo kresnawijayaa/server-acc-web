@@ -13,4 +13,8 @@ app.use(bodyParser.json());
 app.use('/api/auth', authRoutes);
 app.use('/api/customers', customerRoutes);
 
+app.get('/', (req, res) => {
+    res.send('Hello World!');
+  });
+
 module.exports = app;
