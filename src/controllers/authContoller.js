@@ -58,6 +58,35 @@ const register = async (req, res) => {
   }
 };
 
+const registerAdmin = async (req, res) => {
+  const { name, email, password, phone } = req.body;
+
+  try {
+    const emailExists = await db.collection("users").where("email", "==", email).get();
+    if (!emailExists.empty) {
+      return res.status(400).json({ message: "Email already in use" });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const userRef = db.collection("users").doc();
+    await userRef.set({
+      name,
+      email,
+      phone,
+      password: hashedPassword,
+      role: "admin",
+      is_verified: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    res.status(201).json({ message: "User registered successfully" });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 const login = async (req, res) => {
   const { emailOrPhone, password } = req.body;
   try {
@@ -281,6 +310,7 @@ const check = (req, res) => {
 
 module.exports = {
   register,
+  registerAdmin,
   login,
   googleAuth,
   sendOtp,
