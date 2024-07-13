@@ -93,7 +93,7 @@ const login = async (req, res) => {
       const token = jwt.sign(
         { id: phoneSnapshot.docs[0].id, role: user.role },
         jwtSecret,
-        { expiresIn: "1h" }
+        { expiresIn: "1d" }
       );
       const refreshToken = jwt.sign(
         { id: phoneSnapshot.docs[0].id, role: user.role },
@@ -112,7 +112,7 @@ const login = async (req, res) => {
     const token = jwt.sign(
       { id: userSnapshot.docs[0].id, role: user.role },
       jwtSecret,
-      { expiresIn: "1h" }
+      { expiresIn: "1d" }
     );
     const refreshToken = jwt.sign(
       { id: userSnapshot.docs[0].id, role: user.role },
