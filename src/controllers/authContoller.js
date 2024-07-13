@@ -1,4 +1,4 @@
-//authController.js
+// authController.js
 require("dotenv").config();
 const { OAuth2Client } = require("google-auth-library");
 const googleClientId = process.env.GOOGLE_CLIENT_ID;
@@ -33,21 +33,13 @@ const register = async (req, res) => {
   const { name, email, password, phone } = req.body;
 
   try {
-    // Check if email already exists
     const emailExists = await db.collection("users").where("email", "==", email).get();
     if (!emailExists.empty) {
       return res.status(400).json({ message: "Email already in use" });
     }
 
-    const phoneExists = await db.collection("users").where("phone", "==", phone).get();
-    if (!phoneExists.empty) {
-      return res.status(400).json({ message: "Phone number already in use" });
-    }
-
-    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create user document
     const userRef = db.collection("users").doc();
     await userRef.set({
       name,
@@ -199,8 +191,8 @@ const sendOtp = async (req, res) => {
     } else {
       await clientTwilio.messages.create({
         body: `Your OTP code is ${otp}`,
-        from: twilioPhoneNumber,
-        to: contact,
+        from: `whatsapp:${twilioPhoneNumber}`,
+        to: `whatsapp:${contact}`,
       });
     }
     await db.collection("otps").doc(contact).set({
