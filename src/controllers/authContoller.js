@@ -33,7 +33,10 @@ const register = async (req, res) => {
   const { name, email, password, phone } = req.body;
 
   try {
-    const emailExists = await db.collection("users").where("email", "==", email).get();
+    const emailExists = await db
+      .collection("users")
+      .where("email", "==", email)
+      .get();
     if (!emailExists.empty) {
       return res.status(400).json({ message: "Email already in use" });
     }
@@ -63,7 +66,10 @@ const registerAdmin = async (req, res) => {
   const { name, email, password, phone } = req.body;
 
   try {
-    const emailExists = await db.collection("users").where("email", "==", email).get();
+    const emailExists = await db
+      .collection("users")
+      .where("email", "==", email)
+      .get();
     if (!emailExists.empty) {
       return res.status(400).json({ message: "Email already in use" });
     }
@@ -210,13 +216,13 @@ const googleAuth = async (req, res) => {
 
 const formatPhoneNumber = (phoneNumber) => {
   // Menghapus spasi, tanda baca, dan karakter non-digit lainnya
-  let cleaned = ('' + phoneNumber).replace(/\D/g, '');
+  let cleaned = ("" + phoneNumber).replace(/\D/g, "");
   // Jika nomor telepon dimulai dengan '0', ganti dengan '+62'
-  if (cleaned.startsWith('0')) {
-    cleaned = '+62' + cleaned.slice(1);
-  } else if (!cleaned.startsWith('+62')) {
+  if (cleaned.startsWith("0")) {
+    cleaned = "+62" + cleaned.slice(1);
+  } else if (!cleaned.startsWith("+62")) {
     // Jika nomor telepon tidak dimulai dengan '+62' atau '0', tambahkan '+62' di depan
-    cleaned = '+62' + cleaned;
+    cleaned = "+62" + cleaned;
   }
   return cleaned;
 };
@@ -226,7 +232,7 @@ const checkMessageStatus = async (messageSid) => {
     const message = await clientTwilio.messages(messageSid).fetch();
     console.log(message.status);
   } catch (error) {
-    console.error('Error fetching message status:', error);
+    console.error("Error fetching message status:", error);
   }
 };
 
@@ -239,7 +245,13 @@ const sendOtp = async (req, res) => {
         from: emailNodemailer,
         to: contact,
         subject: "Your OTP Code",
-        text: `Your OTP code is ${otp}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; text-align: center;">
+            <h2>Your OTP Code</h2>
+            <p>Please do not share this code with anyone.</p>
+            <div style="font-size: 24px; font-weight: bold; margin: 20px 0;">${otp}</div>
+          </div>
+        `,
       });
     } else {
       const formattedPhone = formatPhoneNumber(contact);
@@ -250,16 +262,18 @@ const sendOtp = async (req, res) => {
         to: `whatsapp:${formattedPhone}`,
         body: `{{1}} adalah kode verifikasi Anda. Demi keamanan, jangan bagikan kode ini.`,
         template: {
-          name: 'otp_verification',
-          language: { code: 'id' }, // Pastikan menggunakan kode bahasa yang sesuai
-          components: [{
-            type: 'body',
-            parameters: [{ type: 'text', text: otp }]
-          }]
-        }
+          name: "otp_verification",
+          language: { code: "id" }, // Pastikan menggunakan kode bahasa yang sesuai
+          components: [
+            {
+              type: "body",
+              parameters: [{ type: "text", text: otp }],
+            },
+          ],
+        },
       });
 
-      console.log('Message SID:', message.sid);
+      console.log("Message SID:", message.sid);
       await checkMessageStatus(message.sid);
     }
 
@@ -357,5 +371,5 @@ module.exports = {
   sendOtp,
   verifyOtp,
   refreshAuth,
-  check
+  check,
 };
