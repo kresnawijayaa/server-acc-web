@@ -48,6 +48,7 @@ const register = async (req, res) => {
       password: hashedPassword,
       role: "user",
       is_verified: false,
+      verified_date: admin.firestore.FieldValue.serverTimestamp(),
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
@@ -77,6 +78,7 @@ const registerAdmin = async (req, res) => {
       password: hashedPassword,
       role: "admin",
       is_verified: false,
+      verified_date: admin.firestore.FieldValue.serverTimestamp(),
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
@@ -206,6 +208,28 @@ const googleAuth = async (req, res) => {
   }
 };
 
+const formatPhoneNumber = (phoneNumber) => {
+  // Menghapus spasi, tanda baca, dan karakter non-digit lainnya
+  let cleaned = ('' + phoneNumber).replace(/\D/g, '');
+  // Jika nomor telepon dimulai dengan '0', ganti dengan '+62'
+  if (cleaned.startsWith('0')) {
+    cleaned = '+62' + cleaned.slice(1);
+  } else if (!cleaned.startsWith('+62')) {
+    // Jika nomor telepon tidak dimulai dengan '+62' atau '0', tambahkan '+62' di depan
+    cleaned = '+62' + cleaned;
+  }
+  return cleaned;
+};
+
+const checkMessageStatus = async (messageSid) => {
+  try {
+    const message = await clientTwilio.messages(messageSid).fetch();
+    console.log(message.status);
+  } catch (error) {
+    console.error('Error fetching message status:', error);
+  }
+};
+
 const sendOtp = async (req, res) => {
   const { contact } = req.body;
   try {
@@ -218,12 +242,27 @@ const sendOtp = async (req, res) => {
         text: `Your OTP code is ${otp}`,
       });
     } else {
-      await clientTwilio.messages.create({
-        body: `Your OTP code is ${otp}`,
+      const formattedPhone = formatPhoneNumber(contact);
+
+      // Mengirim pesan menggunakan templat pesan
+      const message = await clientTwilio.messages.create({
         from: `whatsapp:${twilioPhoneNumber}`,
-        to: `whatsapp:${contact}`,
+        to: `whatsapp:${formattedPhone}`,
+        body: `{{1}} adalah kode verifikasi Anda. Demi keamanan, jangan bagikan kode ini.`,
+        template: {
+          name: 'otp_verification',
+          language: { code: 'id' }, // Pastikan menggunakan kode bahasa yang sesuai
+          components: [{
+            type: 'body',
+            parameters: [{ type: 'text', text: otp }]
+          }]
+        }
       });
+
+      console.log('Message SID:', message.sid);
+      await checkMessageStatus(message.sid);
     }
+
     await db.collection("otps").doc(contact).set({
       otp,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -256,6 +295,7 @@ const verifyOtp = async (req, res) => {
       const user = phoneSnapshot.docs[0].data();
       await db.collection("users").doc(phoneSnapshot.docs[0].id).update({
         is_verified: true,
+        verified_date: admin.firestore.FieldValue.serverTimestamp(),
       });
       const token = jwt.sign(
         { id: phoneSnapshot.docs[0].id, role: user.role },
@@ -272,6 +312,7 @@ const verifyOtp = async (req, res) => {
     const user = userSnapshot.docs[0].data();
     await db.collection("users").doc(userSnapshot.docs[0].id).update({
       is_verified: true,
+      verified_date: admin.firestore.FieldValue.serverTimestamp(),
     });
     const token = jwt.sign(
       { id: userSnapshot.docs[0].id, role: user.role },
