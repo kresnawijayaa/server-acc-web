@@ -293,6 +293,7 @@ const sendOtp = async (req, res) => {
     await db.collection("otps").doc(contact).set({
       otp,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      status: true, // Adding status field with default value true
     });
     res.json({ message: "OTP sent successfully" });
   } catch (error) {
@@ -304,9 +305,15 @@ const verifyOtp = async (req, res) => {
   const { contact, otp } = req.body;
   try {
     const otpDoc = await db.collection("otps").doc(contact).get();
-    if (!otpDoc.exists || otpDoc.data().otp !== otp) {
-      return res.status(400).json({ message: "Invalid OTP" });
+    if (!otpDoc.exists || otpDoc.data().otp !== otp || otpDoc.data().status === false) {
+      return res.status(400).json({ message: "Invalid or inactive OTP" });
     }
+
+    // Update the OTP status to false after successful verification
+    await db.collection("otps").doc(contact).update({
+      status: false,
+    });
+
     const userSnapshot = await db
       .collection("users")
       .where("email", "==", contact)
