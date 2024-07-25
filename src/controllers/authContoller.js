@@ -256,25 +256,38 @@ const sendOtp = async (req, res) => {
     } else {
       const formattedPhone = formatPhoneNumber(contact);
 
-      // Mengirim pesan menggunakan templat pesan
-      const message = await clientTwilio.messages.create({
-        from: `whatsapp:${twilioPhoneNumber}`,
-        to: `whatsapp:${formattedPhone}`,
-        body: `{{1}} adalah kode verifikasi Anda. Demi keamanan, jangan bagikan kode ini.`,
-        template: {
-          name: "otp_verification",
-          language: { code: "id" }, // Pastikan menggunakan kode bahasa yang sesuai
-          components: [
-            {
-              type: "body",
-              parameters: [{ type: "text", text: otp }],
-            },
-          ],
-        },
-      });
+      try {
+        // Mengirim pesan menggunakan templat pesan WhatsApp
+        const message = await clientTwilio.messages.create({
+          from: `whatsapp:${twilioPhoneNumber}`,
+          to: `whatsapp:${formattedPhone}`,
+          body: `{{1}} adalah kode verifikasi Anda. Demi keamanan, jangan bagikan kode ini.`,
+          template: {
+            name: "otp_verification",
+            language: { code: "id" }, // Pastikan menggunakan kode bahasa yang sesuai
+            components: [
+              {
+                type: "body",
+                parameters: [{ type: "text", text: otp }],
+              },
+            ],
+          },
+        });
 
-      console.log("Message SID:", message.sid);
-      await checkMessageStatus(message.sid);
+        console.log("Message SID:", message.sid);
+        await checkMessageStatus(message.sid);
+      } catch (whatsappError) {
+        console.error("Failed to send OTP via WhatsApp:", whatsappError.message);
+        
+        // Fallback to SMS if WhatsApp fails
+        await clientTwilio.messages.create({
+          from: twilioPhoneNumber,
+          to: formattedPhone,
+          body: `${otp} adalah kode verifikasi Anda. Demi keamanan, jangan bagikan kode ini.`,
+        });
+
+        console.log("OTP sent via SMS as fallback.");
+      }
     }
 
     await db.collection("otps").doc(contact).set({
