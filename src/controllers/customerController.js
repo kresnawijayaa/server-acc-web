@@ -396,6 +396,8 @@ const getNearbyCustomers = async (req, res) => {
       const destinations = batch.map(customer => `${customer.lat},${customer.lng}`).join('|');
       const distanceMatrixUrl = `https://maps.googleapis.com/maps/api/distancematrix/json`;
 
+      console.log("nyampe sini 1")
+
       const response = await axios.get(distanceMatrixUrl, {
         params: {
           origins: `${lat},${lng}`,
@@ -404,16 +406,24 @@ const getNearbyCustomers = async (req, res) => {
         }
       });
 
+      console.log("nyampe sini 2")
+
       if (response.data.status !== 'OK') {
         throw new Error('Failed to get distance matrix from Google Maps API');
       }
 
+      console.log("nyampe sini 3")
+
       const elements = response.data.rows[0].elements;
 
+      console.log("nyampe sini 4")
+
+      console.log("ini resultnya harusnya >>> ", elements)
+
       return batch.map((customer, index) => {
-        const distanceInMeters = elements[index].distance.value;
+        const distanceInMeters = elements[index]?.distance?.value || 0;
         const distanceInKilometers = distanceInMeters / 1000;
-        const durationInSeconds = elements[index].duration.value;
+        const durationInSeconds = elements[index]?.duration?.value || 0;
         const durationInMinutes = Math.ceil(durationInSeconds / 60);
         return {
           ...customer,
@@ -425,6 +435,7 @@ const getNearbyCustomers = async (req, res) => {
 
     // Proses semua batch
     for (let i = 0; i < customers.length; i += batchSize) {
+      console.log("ini index ke >>> ", i)
       const batch = customers.slice(i, i + batchSize);
       const batchResults = await getDistanceMatrix(batch);
       allResults.push(...batchResults);
