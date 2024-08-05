@@ -76,9 +76,14 @@ const createCustomer = async (req, res) => {
 
 const bulkCreateCustomer = async (req, res) => {
   const customers = req.body.customers; // Mengharapkan array data customer
+  const batchSize = 100; // Maximum number of writes per batch
 
   try {
-    const promises = customers.map(async customer => {
+    let batches = [];
+    let currentBatch = db.batch();
+    let batchCount = 0;
+
+    for (const customer of customers) {
       const { 
         kota, 
         kecamatan, 
@@ -96,55 +101,71 @@ const bulkCreateCustomer = async (req, res) => {
         tanggalValid 
       } = customer;
 
-      // Menggabungkan alamat lengkap
       const fullAddress = `${alamat}, ${kecamatan}, ${kota}`;
       const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json`;
 
-      // Permintaan ke Google Maps Geocoding API
-      const response = await axios.get(geocodeUrl, {
-        params: {
-          address: fullAddress,
-          key: googleMapApi // Gantilah dengan API Key Anda
-        }
-      });
-
-      // Memeriksa apakah permintaan berhasil dan mendapatkan hasil
-      if (response.data.status === 'OK') {
-        const location = response.data.results[0].geometry.location;
-        const { lat, lng } = location;
-
-        // Membuat link ke Google Maps
-        const googleMapsLink = `https://www.google.com/maps?q=${lat},${lng}`;
-
-        // Menyimpan data customer ke Firestore
-        const customerRef = db.collection('customers').doc();
-        await customerRef.set({
-          kota,
-          kecamatan,
-          alamat,
-          agreement,
-          namaCustomer,
-          merk,
-          type,
-          warna,
-          tahunMobil,
-          tenor,
-          handphone,
-          namaSales,
-          maxOvd,
-          tanggalValid,
-          lat,
-          lng,
-          googleMapsLink,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      try {
+        const response = await axios.get(geocodeUrl, {
+          params: {
+            address:   
+ fullAddress,
+            key: googleMapApi
+          }
         });
-      } else {
-        throw new Error(`Failed to get location for address: ${fullAddress}`);
-      }
-    });
 
-    await Promise.all(promises);
+        if (response.data.status === 'OK') {
+          const location = response.data.results[0].geometry.location;
+          const { lat, lng } = location;
+          const googleMapsLink = `https://www.google.com/maps?q=$${lat},${lng}`;
+
+          const customerRef = db.collection('customers').doc();
+          const customerData = {
+            kota,
+            kecamatan,
+            alamat,
+            agreement,
+            namaCustomer,
+            merk,
+            type,
+            warna,
+            tahunMobil,
+            tenor,
+            handphone,
+            namaSales,
+            maxOvd,
+            tanggalValid,
+            lat,
+            lng,
+            googleMapsLink,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+          };
+
+          currentBatch.set(customerRef, customerData);
+          batchCount++;
+
+          if (batchCount === batchSize) {
+            batches.push(currentBatch);
+            currentBatch = db.batch();
+            batchCount = 0;
+          }
+        } else {
+          console.error(`Failed to get location for address: ${fullAddress}`);
+        }
+      } catch (error) {
+        console.error(`Error fetching geolocation: ${error.message}`);
+      }
+    }
+
+    // Handle the last batch
+    if (batchCount > 0) {
+      batches.push(currentBatch);
+    }
+
+    // Execute all batches sequentially
+    for (const batch of batches) {
+      await batch.commit();
+    }
 
     res.status(201).json({ message: 'All customers created successfully' });
   } catch (error) {
