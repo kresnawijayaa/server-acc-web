@@ -116,7 +116,7 @@ const bulkCreateCustomer = async (req, res) => {
         if (response.data.status === 'OK') {
           const location = response.data.results[0].geometry.location;
           const { lat, lng } = location;
-          const googleMapsLink = `https://www.google.com/maps?q=$${lat},${lng}`;
+          const googleMapsLink = `https://www.google.com/maps?q=${lat},${lng}`;
 
           const customerRef = db.collection('customers').doc();
           const customerData = {
