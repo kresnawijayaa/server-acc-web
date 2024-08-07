@@ -488,4 +488,22 @@ const getUserLocation = async (req, res) => {
   }
 };
 
-module.exports = { createCustomer, bulkCreateCustomer, getCustomers, getCustomer, updateCustomer, deleteCustomer, getNearbyCustomers };
+const deleteAllCustomers = async (req, res) => {
+  try {
+      // Hapus semua dokumen dalam koleksi 'customers'
+      await db.collection('customers').get().then(snapshot => {
+          const batch = db.batch();
+          snapshot.docs.forEach(doc => {
+              batch.delete(doc.ref);
+          });
+          return batch.commit();
+      });
+
+      res.status(200).json({ message: 'Semua customer berhasil dihapus' });
+  } catch (error) {
+      console.error('Error deleting customers:', error);
+      res.status(500).json({ error: 'Terjadi kesalahan saat menghapus customer' });
+  }
+};
+
+module.exports = { deleteAllCustomers, createCustomer, bulkCreateCustomer, getCustomers, getCustomer, updateCustomer, deleteCustomer, getNearbyCustomers };
