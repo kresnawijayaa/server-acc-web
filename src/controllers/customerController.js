@@ -223,56 +223,39 @@ const updateCustomer = async (req, res) => {
     handphone, 
     namaSales, 
     maxOvd, 
-    tanggalValid 
+    tanggalValid,
+    lat,
+    lng 
   } = req.body;
 
   try {
-    const fullAddress = `${alamat}, ${kecamatan}, ${kota}`;
-    const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json`;
+    // Membuat link ke Google Maps
+    const googleMapsLink = `https://www.google.com/maps?q=${lat},${lng}`;
 
-    // Permintaan ke Google Maps Geocoding API
-    const response = await axios.get(geocodeUrl, {
-      params: {
-        address: fullAddress,
-        key: googleMapApi // Gantilah dengan API Key Anda
-      }
+    // Memperbarui data customer di Firestore
+    const customerRef = db.collection('customers').doc(id);
+    await customerRef.update({
+      kota,
+      kecamatan,
+      alamat,
+      agreement,
+      namaCustomer,
+      merk,
+      type,
+      warna,
+      tahunMobil,
+      tenor,
+      handphone,
+      namaSales,
+      maxOvd,
+      tanggalValid,
+      lat,
+      lng,
+      googleMapsLink,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
-    // Memeriksa apakah permintaan berhasil dan mendapatkan hasil
-    if (response.data.status === 'OK') {
-      const location = response.data.results[0].geometry.location;
-      const { lat, lng } = location;
-
-      // Membuat link ke Google Maps
-      const googleMapsLink = `https://www.google.com/maps?q=${lat},${lng}`;
-
-      // Memperbarui data customer di Firestore
-      const customerRef = db.collection('customers').doc(id);
-      await customerRef.update({
-        kota,
-        kecamatan,
-        alamat,
-        agreement,
-        namaCustomer,
-        merk,
-        type,
-        warna,
-        tahunMobil,
-        tenor,
-        handphone,
-        namaSales,
-        maxOvd,
-        tanggalValid,
-        lat,
-        lng,
-        googleMapsLink,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-      });
-
-      res.json({ message: 'Customer updated successfully' });
-    } else {
-      res.status(400).json({ message: 'Failed to get location from address' });
-    }
+    res.json({ message: 'Customer updated successfully' });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
