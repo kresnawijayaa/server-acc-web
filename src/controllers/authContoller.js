@@ -383,7 +383,133 @@ const check = (req, res) => {
   res.sendStatus(200); // OK
 };
 
+const sendPasswordReset = async (req, res) => {
+  const { contact } = req.body;
+  try {
+    const userSnapshot = await db
+      .collection("users")
+      .where("email", "==", contact)
+      .get();
+
+    if (userSnapshot.empty) {
+      const phoneSnapshot = await db
+        .collection("users")
+        .where("phone", "==", contact)
+        .get();
+      if (phoneSnapshot.empty) {
+        return res.status(400).json({ message: "User not found" });
+      }
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    if (contact.includes("@")) {
+      await transporter.sendMail({
+        from: emailNodemailer,
+        to: contact,
+        subject: "Your Password Reset OTP Code",
+        html: `
+          <div style="font-family: Arial, sans-serif; text-align: center;">
+            <h2>Your Password Reset OTP Code</h2>
+            <p>Please do not share this code with anyone.</p>
+            <div style="font-size: 24px; font-weight: bold; margin: 20px 0;">${otp}</div>
+          </div>
+        `,
+      });
+    } else {
+      const formattedPhone = formatPhoneNumber(contact);
+
+      try {
+        // Mengirim pesan menggunakan templat pesan WhatsApp
+        const message = await clientTwilio.messages.create({
+          from: `whatsapp:${twilioPhoneNumber}`,
+          to: `whatsapp:${formattedPhone}`,
+          body: `{{1}} adalah kode verifikasi reset password Anda. Demi keamanan, jangan bagikan kode ini.`,
+          template: {
+            name: "password_reset",
+            language: { code: "id" },
+            components: [
+              {
+                type: "body",
+                parameters: [{ type: "text", text: otp }],
+              },
+            ],
+          },
+        });
+
+        console.log("Message SID:", message.sid);
+        await checkMessageStatus(message.sid);
+      } catch (whatsappError) {
+        console.error("Failed to send password reset OTP via WhatsApp:", whatsappError.message);
+
+        // Fallback to SMS if WhatsApp fails
+        await clientTwilio.messages.create({
+          from: twilioPhoneNumber,
+          to: formattedPhone,
+          body: `${otp} adalah kode verifikasi reset password Anda. Demi keamanan, jangan bagikan kode ini.`,
+        });
+
+        console.log("Password reset OTP sent via SMS as fallback.");
+      }
+    }
+
+    await db.collection("otps").doc(contact).set({
+      otp,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      status: true, // Adding status field with default value true
+    });
+    res.json({ message: "Password reset OTP sent successfully" });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const resetPassword = async (req, res) => {
+  const { contact, otp, newPassword } = req.body;
+  try {
+    const otpDoc = await db.collection("otps").doc(contact).get();
+    if (!otpDoc.exists || otpDoc.data().otp !== otp || otpDoc.data().status === false) {
+      return res.status(400).json({ message: "Invalid or inactive OTP" });
+    }
+
+    // Update the OTP status to false after successful verification
+    await db.collection("otps").doc(contact).update({
+      status: false,
+    });
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const userSnapshot = await db
+      .collection("users")
+      .where("email", "==", contact)
+      .get();
+    if (userSnapshot.empty) {
+      const phoneSnapshot = await db
+        .collection("users")
+        .where("phone", "==", contact)
+        .get();
+      if (phoneSnapshot.empty) {
+        return res.status(400).json({ message: "User not found" });
+      }
+      await db.collection("users").doc(phoneSnapshot.docs[0].id).update({
+        password: hashedPassword,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    } else {
+      await db.collection("users").doc(userSnapshot.docs[0].id).update({
+        password: hashedPassword,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+
+    res.json({ message: "Password reset successfully" });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+
 module.exports = {
+  sendPasswordReset,
+  resetPassword,
   register,
   registerAdmin,
   login,
