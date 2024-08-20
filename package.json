@@ -19,6 +19,7 @@
     "express": "^4.19.2",
     "firebase-admin": "^12.2.0",
     "jsonwebtoken": "^9.0.2",
+    "node-cache": "^5.1.2",
     "nodemailer": "^6.9.14",
     "twilio": "^5.2.2"
   }

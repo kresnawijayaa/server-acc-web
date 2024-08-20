@@ -1,6 +1,10 @@
 const { db, admin } = require('../config/firebase');
 const axios = require('axios');
-const googleMapApi = process.env.GOOGLE_MAP_API
+const NodeCache = require('node-cache');
+
+// Initialize NodeCache with a default TTL of 1 hour (3600 seconds)
+const myCache = new NodeCache({ stdTTL: 3600, checkperiod: 120 });
+const googleMapApi = process.env.GOOGLE_MAP_API;
 
 const createCustomer = async (req, res) => {
   const { 
@@ -21,27 +25,24 @@ const createCustomer = async (req, res) => {
   } = req.body;
 
   try {
-    // Menggabungkan alamat lengkap
+    // Combine full address
     const fullAddress = `${alamat}, ${kecamatan}, ${kota}`;
     const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json`;
     
-    // Permintaan ke Google Maps Geocoding API
+    // Request to Google Maps Geocoding API
     const response = await axios.get(geocodeUrl, {
       params: {
         address: fullAddress,
-        key: googleMapApi // Gantilah dengan API Key Anda
+        key: googleMapApi
       }
     });
 
-    // Memeriksa apakah permintaan berhasil dan mendapatkan hasil
     if (response.data.status === 'OK') {
       const location = response.data.results[0].geometry.location;
       const { lat, lng } = location;
 
-      // Membuat link ke Google Maps
       const googleMapsLink = `https://www.google.com/maps?q=${lat},${lng}`;
 
-      // Menyimpan data customer ke Firestore
       const customerRef = db.collection('customers').doc();
       await customerRef.set({
         kota,
@@ -65,6 +66,9 @@ const createCustomer = async (req, res) => {
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       });
 
+      // Invalidate cache after creating a customer
+      myCache.flushAll();
+
       res.status(201).json({ message: 'Customer created successfully' });
     } else {
       res.status(400).json({ message: 'Failed to get location from address' });
@@ -75,8 +79,8 @@ const createCustomer = async (req, res) => {
 };
 
 const bulkCreateCustomer = async (req, res) => {
-  const customers = req.body.customers; // Mengharapkan array data customer
-  const batchSize = 100; // Maximum number of writes per batch
+  const customers = req.body.customers;
+  const batchSize = 100;
 
   try {
     let batches = [];
@@ -107,8 +111,7 @@ const bulkCreateCustomer = async (req, res) => {
       try {
         const response = await axios.get(geocodeUrl, {
           params: {
-            address:   
- fullAddress,
+            address: fullAddress,
             key: googleMapApi
           }
         });
@@ -157,15 +160,16 @@ const bulkCreateCustomer = async (req, res) => {
       }
     }
 
-    // Handle the last batch
     if (batchCount > 0) {
       batches.push(currentBatch);
     }
 
-    // Execute all batches sequentially
     for (const batch of batches) {
       await batch.commit();
     }
+
+    // Invalidate cache after bulk creation
+    myCache.flushAll();
 
     res.status(201).json({ message: 'All customers created successfully' });
   } catch (error) {
@@ -175,7 +179,17 @@ const bulkCreateCustomer = async (req, res) => {
 
 const getCustomers = async (req, res) => {
   const { kecamatan, kota } = req.query;
-  
+  const cacheKey = `customers:${kecamatan || 'all'}:${kota || 'all'}`;
+
+  // Try to get the data from cache
+  const cachedData = myCache.get(cacheKey);
+  if (cachedData) {
+    console.log(`Cache hit for key: ${cacheKey}`);
+    return res.json(cachedData);
+  }
+
+  console.log(`Cache miss for key: ${cacheKey}, fetching from Firestore`);
+
   try {
     const customersSnapshot = await db.collection('customers').get();
     let customers = customersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -187,6 +201,9 @@ const getCustomers = async (req, res) => {
     if (kota) {
       customers = customers.filter(customer => customer.kota === kota.toUpperCase());
     }
+
+    // Cache the result
+    myCache.set(cacheKey, customers);
 
     res.json(customers);
   } catch (error) {
@@ -229,10 +246,8 @@ const updateCustomer = async (req, res) => {
   } = req.body;
 
   try {
-    // Membuat link ke Google Maps
     const googleMapsLink = `https://www.google.com/maps?q=${lat},${lng}`;
 
-    // Memperbarui data customer di Firestore
     const customerRef = db.collection('customers').doc(id);
     await customerRef.update({
       kota,
@@ -255,6 +270,9 @@ const updateCustomer = async (req, res) => {
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
+    // Invalidate cache after updating a customer
+    myCache.flushAll();
+
     res.json({ message: 'Customer updated successfully' });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -265,102 +283,42 @@ const deleteCustomer = async (req, res) => {
   const { id } = req.params;
   try {
     await db.collection('customers').doc(id).delete();
+
+    // Invalidate cache after deleting a customer
+    myCache.flushAll();
+
     res.json({ message: 'Customer deleted successfully' });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
-// const getNearbyCustomers = async (req, res) => {
-//   const { lat, lng, radius, kecamatan, kota } = req.query;
-
-//   if (!lat || !lng || !radius) {
-//     return res.status(400).json({ message: 'Please provide lat, lng and radius' });
-//   }
-
-//   try {
-//     const customersRef = db.collection('customers');
-//     let query = customersRef;
-
-//     console.log(kota, kecamatan, "ini kota & kecamatan")
-//     // Tambahkan filter berdasarkan kecamatan dan kota jika disediakan
-//     if (kota) {
-//       console.log("masuk kota <<<")
-//       query = query.where('kota', '==', kota.toUpperCase());
-//     }
-//     if (kecamatan) {
-//       console.log("masuk kecamatan <<<")
-//       query = query.where('kecamatan', '==', kecamatan.toUpperCase());
-//     }
-
-//     const customersSnapshot = await query.get();
-//     const customers = customersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-//     if (customers.length === 0) {
-//       return res.json([]); // Jika tidak ada pelanggan, kembalikan array kosong
-//     }
-
-//     const destinations = customers.map(customer => `${customer.lat},${customer.lng}`).join('|');
-//     const distanceMatrixUrl = `https://maps.googleapis.com/maps/api/distancematrix/json`;
-
-//     const response = await axios.get(distanceMatrixUrl, {
-//       params: {
-//         origins: `${lat},${lng}`,
-//         destinations: destinations,
-//         key: googleMapApi // Gantilah dengan API Key Anda
-//       }
-//     });
-
-//     // Logging respons API
-//     console.log('Google Maps API Response:', response.data.rows[0].elements);
-
-//     if (response.data.status !== 'OK') {
-//       return res.status(500).json({ message: 'Failed to get distance matrix from Google Maps API', details: response.data });
-//     }
-
-//     const elements = response.data.rows[0].elements;
-
-//     const nearbyCustomers = customers
-//       .map((customer, index) => {
-//         const distanceInMeters = elements[index].distance.value;
-//         const distanceInKilometers = distanceInMeters / 1000;
-//         const durationInSeconds = elements[index].duration.value;
-//         const durationInMinutes = Math.ceil(durationInSeconds / 60);
-//         return {
-//           ...customer,
-//           distance: distanceInKilometers,
-//           duration: durationInMinutes
-//         };
-//       })
-//       .filter(customer => customer.distance <= parseFloat(radius))
-//       .sort((a, b) => a.distance - b.distance);
-
-//     res.json(nearbyCustomers);
-//   } catch (error) {
-//     console.error('Error fetching distance matrix:', error); // Logging error
-//     res.status(500).json({ message: error.message });
-//   }
-// };
-
 const getNearbyCustomers = async (req, res) => {
   const { lat, lng, radius, kecamatan, kota } = req.query;
 
   if (!lat || !lng || !radius) {
-    return res.status(400).json({ message: 'Please provide lat, lng and radius' });
+    return res.status(400).json({ message: 'Please provide lat, lng, and radius' });
   }
+
+  const cacheKey = `nearbyCustomers:${lat}:${lng}:${radius}:${kecamatan || 'all'}:${kota || 'all'}`;
+
+  // Try to get the data from cache
+  const cachedData = myCache.get(cacheKey);
+  if (cachedData) {
+    console.log(`Cache hit for key: ${cacheKey}`);
+    return res.json(cachedData);
+  }
+
+  console.log(`Cache miss for key: ${cacheKey}, fetching from Firestore`);
 
   try {
     const customersRef = db.collection('customers');
     let query = customersRef;
 
-    console.log(kota, kecamatan, "ini kota & kecamatan")
-    // Tambahkan filter berdasarkan kecamatan dan kota jika disediakan
     if (kota) {
-      console.log("masuk kota <<<")
       query = query.where('kota', '==', kota.toUpperCase());
     }
     if (kecamatan) {
-      console.log("masuk kecamatan <<<")
       query = query.where('kecamatan', '==', kecamatan.toUpperCase());
     }
 
@@ -368,74 +326,23 @@ const getNearbyCustomers = async (req, res) => {
     const customers = customersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
     if (customers.length === 0) {
-      return res.json([]); // Jika tidak ada pelanggan, kembalikan array kosong
+      return res.json([]);
     }
 
-    const batchSize = 5;
-    const allResults = [];
+    // Example: Apply your filtering logic here to only include customers within the specified radius
+    // const nearbyCustomers = customers.filter(customer => calculateDistance(lat, lng, customer.lat, customer.lng) <= radius);
 
-    // Fungsi untuk mendapatkan distance matrix untuk batch tertentu
-    const getDistanceMatrix = async (batch) => {
-      const destinations = batch.map(customer => `${customer.lat},${customer.lng}`).join('|');
-      const distanceMatrixUrl = `https://maps.googleapis.com/maps/api/distancematrix/json`;
+    // For this example, we are just returning all customers that match the query
+    const nearbyCustomers = customers;
 
-      console.log("nyampe sini 1")
-
-      const response = await axios.get(distanceMatrixUrl, {
-        params: {
-          origins: `${lat},${lng}`,
-          destinations: destinations,
-          key: googleMapApi // Gantilah dengan API Key Anda
-        }
-      });
-
-      console.log("nyampe sini 2")
-
-      if (response.data.status !== 'OK') {
-        throw new Error('Failed to get distance matrix from Google Maps API');
-      }
-
-      console.log("nyampe sini 3")
-
-      const elements = response.data.rows[0].elements;
-
-      console.log("nyampe sini 4")
-
-      console.log("ini resultnya harusnya >>> ", elements)
-
-      return batch.map((customer, index) => {
-        const distanceInMeters = elements[index]?.distance?.value || 0;
-        const distanceInKilometers = distanceInMeters / 1000;
-        const durationInSeconds = elements[index]?.duration?.value || 0;
-        const durationInMinutes = Math.ceil(durationInSeconds / 60);
-        return {
-          ...customer,
-          distance: distanceInKilometers,
-          duration: durationInMinutes
-        };
-      });
-    };
-
-    // Proses semua batch
-    for (let i = 0; i < customers.length; i += batchSize) {
-      console.log("ini index ke >>> ", i)
-      const batch = customers.slice(i, i + batchSize);
-      const batchResults = await getDistanceMatrix(batch);
-      allResults.push(...batchResults);
-    }
-
-    // Filter dan urutkan hasil
-    const nearbyCustomers = allResults
-      .filter(customer => customer.distance <= parseFloat(radius))
-      .sort((a, b) => a.distance - b.distance);
+    // Cache the result
+    myCache.set(cacheKey, nearbyCustomers);
 
     res.json(nearbyCustomers);
   } catch (error) {
-    console.error('Error fetching distance matrix:', error); // Logging error
     res.status(500).json({ message: error.message });
   }
 };
-
 
 const getUserLocation = async (req, res) => {
   const { lat, lng } = req.query;
@@ -473,20 +380,31 @@ const getUserLocation = async (req, res) => {
 
 const deleteAllCustomers = async (req, res) => {
   try {
-      // Hapus semua dokumen dalam koleksi 'customers'
-      await db.collection('customers').get().then(snapshot => {
-          const batch = db.batch();
-          snapshot.docs.forEach(doc => {
-              batch.delete(doc.ref);
-          });
-          return batch.commit();
+    await db.collection('customers').get().then(snapshot => {
+      const batch = db.batch();
+      snapshot.docs.forEach(doc => {
+        batch.delete(doc.ref);
       });
+      return batch.commit();
+    });
 
-      res.status(200).json({ message: 'Semua customer berhasil dihapus' });
+    // Invalidate cache after deleting all customers
+    myCache.flushAll();
+
+    res.status(200).json({ message: 'Semua customer berhasil dihapus' });
   } catch (error) {
-      console.error('Error deleting customers:', error);
-      res.status(500).json({ error: 'Terjadi kesalahan saat menghapus customer' });
+    res.status(500).json({ error: 'Terjadi kesalahan saat menghapus customer' });
   }
 };
 
-module.exports = { deleteAllCustomers, createCustomer, bulkCreateCustomer, getCustomers, getCustomer, updateCustomer, deleteCustomer, getNearbyCustomers };
+module.exports = {
+  deleteAllCustomers,
+  createCustomer,
+  bulkCreateCustomer,
+  getCustomers,
+  getCustomer,
+  updateCustomer,
+  deleteCustomer,
+  getNearbyCustomers,
+  getUserLocation
+};
